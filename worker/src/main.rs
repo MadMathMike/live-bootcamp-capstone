@@ -1,9 +1,10 @@
-use std::time::Duration;
+use anyhow::{Result, anyhow};
+use std::{env, time::Duration};
 
 use axum::{Router, routing::get};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     let app = Router::new()
         .route(
             "/work",
@@ -14,8 +15,16 @@ async fn main() {
         // effectively our health check endpoint
         .route("/ping", get(|| async {}));
 
-    // TODO: probably get the port from an environment variable so when we spin
-    // up multiple workers in docker, we can configure their port binding more easily
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let port_number = env::var("WORKER_PORT")?.parse::<u16>()?;
+
+    match port_number {
+        3001..=3100 => {
+            let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port_number}")).await?;
+            println!("Listening on port {port_number}");
+            axum::serve(listener, app).await?;
+
+            Ok(())
+        }
+        _ => Err(anyhow!("WORKER_PORT must be in range [3001,3100]")),
+    }
 }
