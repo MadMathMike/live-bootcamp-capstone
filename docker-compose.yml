@@ -1,0 +1,4 @@
+services:
+  worker-1:
+    build:
+      context: ./worker
