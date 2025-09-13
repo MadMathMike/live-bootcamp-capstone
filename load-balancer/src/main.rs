@@ -12,10 +12,12 @@ use tokio::net::TcpListener;
 
 async fn forward(
     mut request: Request<hyper::body::Incoming>,
+    target_host: String,
     client: Client<HttpConnector, hyper::body::Incoming>,
 ) -> Result<Response<hyper::body::Incoming>, Infallible> {
     let uri_string = format!(
-        "http://localhost:3001{}",
+        "http://{}{}",
+        target_host,
         request
             .uri()
             .path_and_query()
@@ -57,6 +59,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let executor = TokioExecutor::new();
     let client = client::legacy::Builder::new(executor).build(connector);
 
+    let mut pool = Pool::new(vec![
+        "localhost:3001".to_owned(),
+        "localhost:3002".to_owned(),
+        "localhost:3003".to_owned(),
+    ]);
+
     // We start a loop to continuously accept incoming connections
     loop {
         let (stream, _) = listener.accept().await?;
@@ -67,16 +75,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let client = client.clone();
 
+        let host = pool.next().unwrap();
+
         // Spawn a tokio task to serve multiple connections concurrently
         tokio::task::spawn(async move {
             // Finally, we bind the incoming connection to our `hello` service
             if let Err(err) = http1::Builder::new()
                 // `service_fn` converts our function in a `Service`
-                .serve_connection(io, service_fn(move |req| forward(req, client.clone())))
+                .serve_connection(
+                    io,
+                    service_fn(move |req| forward(req, host.clone(), client.clone())),
+                )
                 .await
             {
                 eprintln!("Error serving connection: {:?}", err);
             }
         });
+    }
+}
+
+pub struct Pool {
+    round_robin_counter: usize,
+    hosts: Vec<String>,
+}
+
+impl Pool {
+    pub fn new(hosts: Vec<String>) -> Self {
+        Self {
+            round_robin_counter: 0,
+            hosts,
+        }
+    }
+}
+
+impl Iterator for Pool {
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.round_robin_counter += 1;
+        let host_index = self.round_robin_counter % self.hosts.len();
+
+        if self.hosts.len() > 0 {
+            Some(self.hosts.get(host_index).unwrap().clone())
+        } else {
+            None
+        }
     }
 }
