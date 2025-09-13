@@ -1,9 +1,16 @@
 use std::{env, time::Duration};
 
 use anyhow::{Result, anyhow};
-use axum::{Router, routing::get};
+use axum::{Router, http::Response, routing::get};
 use env_logger::{Builder, Target};
 use log::info;
+
+#[axum::debug_handler]
+async fn work() -> Response<String> {
+    info!("Doing work!");
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    Response::new("Done!".to_owned())
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -13,13 +20,7 @@ async fn main() -> Result<()> {
     builder.init();
 
     let app = Router::new()
-        .route(
-            "/work",
-            get(async move || {
-                info!("Doing work!");
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }),
-        )
+        .route("/work", get(work))
         // effectively our health check endpoint
         .route("/ping", get(|| async {}));
 
