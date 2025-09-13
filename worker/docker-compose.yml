@@ -1,22 +1,25 @@
 services:
   worker-1:
     build:
-      context: ./worker
+      context: .
     ports:
       - 3001:3001
     environment:
       WORKER_PORT: 3001
+      RUST_LOG: info
   worker-2:
     build:
-      context: ./worker
+      context: .
     ports:
       - 3002:3002
     environment:
       WORKER_PORT: 3002
+      RUST_LOG: info
   worker-3:
     build:
-      context: ./worker
+      context: .
     ports:
       - 3003:3003
     environment:
       WORKER_PORT: 3003
+      RUST_LOG: info

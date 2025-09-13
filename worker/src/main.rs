@@ -1,14 +1,22 @@
-use anyhow::{Result, anyhow};
 use std::{env, time::Duration};
 
+use anyhow::{Result, anyhow};
 use axum::{Router, routing::get};
+use env_logger::{Builder, Target};
+use log::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let mut builder = Builder::from_default_env();
+    builder.target(Target::Stdout);
+
+    builder.init();
+
     let app = Router::new()
         .route(
             "/work",
-            get(|| async {
+            get(async move || {
+                info!("Doing work!");
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }),
         )
@@ -20,7 +28,7 @@ async fn main() -> Result<()> {
     match port_number {
         3001..=3100 => {
             let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port_number}")).await?;
-            println!("Listening on port {port_number}");
+            info!("Listening on port {port_number}");
             axum::serve(listener, app).await?;
 
             Ok(())
