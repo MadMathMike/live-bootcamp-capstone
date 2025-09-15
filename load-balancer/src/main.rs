@@ -51,13 +51,9 @@ async fn forward(
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-
-    // We create a TcpListener and bind it to 127.0.0.1:3000
     let listener = TcpListener::bind(addr).await?;
 
-    let connector = HttpConnector::new();
-    let executor = TokioExecutor::new();
-    let client = client::legacy::Builder::new(executor).build(connector);
+    let client = client::legacy::Builder::new(TokioExecutor::new()).build(HttpConnector::new());
 
     let mut pool = Pool::new(vec![
         "localhost:3001".to_owned(),
@@ -68,20 +64,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // We start a loop to continuously accept incoming connections
     loop {
         let (stream, _) = listener.accept().await?;
-
-        // Use an adapter to access something implementing `tokio::io` traits as if they implement
-        // `hyper::rt` IO traits.
         let io = TokioIo::new(stream);
-
         let client = client.clone();
-
         let host = pool.next().unwrap();
 
-        // Spawn a tokio task to serve multiple connections concurrently
         tokio::task::spawn(async move {
-            // Finally, we bind the incoming connection to our `hello` service
             if let Err(err) = http1::Builder::new()
-                // `service_fn` converts our function in a `Service`
                 .serve_connection(
                     io,
                     service_fn(move |req| forward(req, host.clone(), client.clone())),
@@ -112,13 +100,12 @@ impl Iterator for Pool {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.round_robin_counter += 1;
-        let host_index = self.round_robin_counter % self.hosts.len();
-
-        if self.hosts.len() > 0 {
-            Some(self.hosts.get(host_index).unwrap().clone())
-        } else {
-            None
+        if self.hosts.len() == 0 {
+            return None;
         }
+
+        self.round_robin_counter += 1;
+        let index = self.round_robin_counter % self.hosts.len();
+        Some(self.hosts.get(index).unwrap().clone())
     }
 }
