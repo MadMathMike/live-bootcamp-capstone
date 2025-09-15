@@ -1,5 +1,7 @@
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::sync::Arc;
+use std::usize;
 
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -12,7 +14,7 @@ use tokio::net::TcpListener;
 
 async fn forward(
     mut request: Request<hyper::body::Incoming>,
-    target_host: String,
+    target_host: Arc<String>,
     client: Client<HttpConnector, hyper::body::Incoming>,
 ) -> Result<Response<hyper::body::Incoming>, Infallible> {
     let uri_string = format!(
@@ -84,28 +86,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 pub struct Pool {
     round_robin_counter: usize,
-    hosts: Vec<String>,
+    hosts: Vec<Arc<String>>,
 }
 
 impl Pool {
     pub fn new(hosts: Vec<String>) -> Self {
         Self {
             round_robin_counter: 0,
-            hosts,
+            hosts: hosts.into_iter().map(|host| Arc::new(host)).collect(),
         }
     }
 }
 
 impl Iterator for Pool {
-    type Item = String;
+    type Item = Arc<String>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.hosts.len() == 0 {
             return None;
         }
 
-        self.round_robin_counter += 1;
-        let index = self.round_robin_counter % self.hosts.len();
-        Some(self.hosts.get(index).unwrap().clone())
+        // Round robin
+        // self.round_robin_counter += 1;
+        // let index = self.round_robin_counter % self.hosts.len();
+        // Some(self.hosts.get(index).unwrap().clone())
+
+        let mut least_connections_host: Option<Arc<String>> = None;
+        let mut least_connection_count = usize::MAX;
+        for host in self.hosts.iter() {
+            // This reference count doesn't actually contain the number of active connections
+            // to the host, but it correlates. As the host is cloned for each new request,
+            // the internal counter of the Arc will increment. And when the request completes,
+            // the clone is dropped decrementing the counter.
+            let connection_count = Arc::strong_count(host);
+
+            if connection_count < least_connection_count {
+                least_connection_count = connection_count;
+                least_connections_host = Some(host.clone());
+            }
+        }
+
+        least_connections_host
     }
 }
