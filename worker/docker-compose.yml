@@ -7,6 +7,7 @@ services:
     environment:
       WORKER_PORT: 3001
       RUST_LOG: info
+      MAX_WORK_MILLISECONDS: 100
   worker-2:
     build:
       context: .
@@ -15,6 +16,7 @@ services:
     environment:
       WORKER_PORT: 3002
       RUST_LOG: info
+      MAX_WORK_MILLISECONDS: 1000
   worker-3:
     build:
       context: .
@@ -23,3 +25,4 @@ services:
     environment:
       WORKER_PORT: 3003
       RUST_LOG: info
+      MAX_WORK_MILLISECONDS: 2000

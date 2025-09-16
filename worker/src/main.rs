@@ -1,28 +1,42 @@
 use std::{env, time::Duration};
 
 use anyhow::{Result, anyhow};
-use axum::{Router, http::Response, routing::get};
+use axum::{Router, extract::State, http::Response, routing::get};
 use env_logger::{Builder, Target};
 use log::info;
+use rand::{Rng, distr::Uniform};
 
 #[axum::debug_handler]
-async fn work() -> Response<String> {
-    info!("Doing work!");
-    tokio::time::sleep(Duration::from_millis(2000)).await;
+async fn work(State(state): State<AppState>) -> Response<String> {
+    let work_duration = rand::rng().sample(state.work_duration_range);
+    info!("Working for {work_duration}");
+    tokio::time::sleep(Duration::from_millis(work_duration)).await;
     Response::new("Done!".to_owned())
+}
+
+#[derive(Clone)]
+struct AppState {
+    work_duration_range: Uniform<u64>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut builder = Builder::from_default_env();
     builder.target(Target::Stdout);
-
     builder.init();
+
+    let max_work_milliseconds = env::var("MAX_WORK_MILLISECONDS")?.parse::<u64>()?;
+    let range = Uniform::new(0, max_work_milliseconds).unwrap();
+
+    let state = AppState {
+        work_duration_range: range,
+    };
 
     let app = Router::new()
         .route("/work", get(work))
         // effectively our health check endpoint
-        .route("/ping", get(|| async {}));
+        .route("/ping", get(|| async {}))
+        .with_state(state);
 
     let port_number = env::var("WORKER_PORT")?.parse::<u16>()?;
 
