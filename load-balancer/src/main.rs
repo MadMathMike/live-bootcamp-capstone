@@ -13,6 +13,7 @@ use hyper_util::client::legacy::Client;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::net::TcpListener;
+use tokio::sync::RwLock;
 
 use crate::load_balancing::*;
 
@@ -65,7 +66,7 @@ async fn forward(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let pool = Arc::new(tokio::sync::RwLock::new(Pool::new(vec![
+    let pool = Arc::new(RwLock::new(Pool::new(vec![
         "localhost:3002".to_owned(),
         "localhost:3001".to_owned(),
         "localhost:3003".to_owned(),
@@ -73,25 +74,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config_addr = SocketAddr::from(([127, 0, 0, 1], 2999));
     let config_listener = TcpListener::bind(config_addr).await?;
-    let pool_clone = pool.clone();
-    tokio::task::spawn(async move {
-        // We start a loop to continuously accept incoming connections
-        loop {
-            let (_, _) = config_listener.accept().await.unwrap();
-            let mut pool = pool_clone.write().await;
-            pool.cycle_algorithm();
-            for host in pool.hosts.iter() {
-                let response_times = host.response_times.read().await;
-                let avg = if response_times.len() > 0 {
-                    Some(response_times.iter().sum::<u128>() / response_times.len() as u128)
-                } else {
-                    None
-                };
-                println!("{} response time average {avg:?}", host.connection);
-            }
-            println!("{:?}", pool.algorithm);
-        }
-    });
+    tokio::task::spawn(listen_for_algorithm_change_requests(
+        pool.clone(),
+        config_listener,
+    ));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     let listener = TcpListener::bind(addr).await?;
@@ -116,5 +102,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Error serving connection: {:?}", err);
             }
         });
+    }
+}
+
+async fn listen_for_algorithm_change_requests(pool: Arc<RwLock<Pool>>, listener: TcpListener) {
+    loop {
+        let (_, _) = listener.accept().await.unwrap();
+        let mut mut_pool = pool.write().await;
+        mut_pool.cycle_algorithm();
+        for host in mut_pool.hosts.iter() {
+            let response_times = host.response_times.read().await;
+            let avg = if response_times.len() > 0 {
+                Some(response_times.iter().sum::<u128>() / response_times.len() as u128)
+            } else {
+                None
+            };
+            println!("{} response time average {avg:?}", host.connection);
+        }
+        println!("{:?}", mut_pool.algorithm);
     }
 }
