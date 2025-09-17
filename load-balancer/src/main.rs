@@ -1,8 +1,10 @@
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
 use std::usize;
 
+use circular_buffer::CircularBuffer;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
@@ -11,15 +13,16 @@ use hyper_util::client::legacy::Client;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::net::TcpListener;
+use tokio::sync::RwLock;
 
 async fn forward(
     mut request: Request<hyper::body::Incoming>,
-    target_host: Arc<String>,
+    target_host: Arc<Host>,
     client: Client<HttpConnector, hyper::body::Incoming>,
 ) -> Result<Response<hyper::body::Incoming>, Infallible> {
     let uri_string = format!(
         "http://{}{}",
-        target_host,
+        target_host.connection,
         request
             .uri()
             .path_and_query()
@@ -37,9 +40,18 @@ async fn forward(
 
     let request_forwarded = builder.body(request.into_body()).unwrap(); // TODO
 
+    let start = Instant::now();
+
     // Forward the request and return the response
     match client.request(request_forwarded).await {
-        Ok(res) => Ok(res),
+        Ok(res) => {
+            target_host
+                .response_times
+                .write()
+                .await
+                .push_back(start.elapsed().as_millis());
+            Ok(res)
+        }
         Err(err) => {
             todo!()
             // eprintln!("Request failed: {:?}", err);
@@ -67,6 +79,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (_, _) = config_listener.accept().await.unwrap();
             let mut pool = pool_clone.write().await;
             pool.cycle_algorithm();
+            for host in pool.hosts.iter() {
+                let response_times = host.response_times.read().await;
+                let avg = if response_times.len() > 0 {
+                    Some(response_times.iter().sum::<u128>() / response_times.len() as u128)
+                } else {
+                    None
+                };
+                println!("{} response time average {avg:?}", host.connection);
+            }
             println!("{:?}", pool.algorithm);
         }
     });
@@ -97,6 +118,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+#[derive(Clone)]
+pub struct Host {
+    connection: String,
+    response_times: Arc<RwLock<CircularBuffer<100, u128>>>,
+}
+
+impl Host {
+    pub fn new(connection: String) -> Self {
+        Self {
+            connection: connection,
+            response_times: Arc::new(RwLock::new(CircularBuffer::new())),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum LoadBalancingAlgorithm {
     RoundRobin,
@@ -105,7 +141,7 @@ pub enum LoadBalancingAlgorithm {
 
 pub struct Pool {
     round_robin_counter: usize,
-    hosts: Vec<Arc<String>>,
+    hosts: Vec<Arc<Host>>,
     algorithm: LoadBalancingAlgorithm,
 }
 
@@ -113,7 +149,10 @@ impl Pool {
     pub fn new(hosts: Vec<String>) -> Self {
         Self {
             round_robin_counter: 0,
-            hosts: hosts.into_iter().map(|host| Arc::new(host)).collect(),
+            hosts: hosts
+                .into_iter()
+                .map(|host| Arc::new(Host::new(host)))
+                .collect(),
             algorithm: LoadBalancingAlgorithm::RoundRobin,
         }
     }
@@ -131,7 +170,7 @@ impl Pool {
 }
 
 impl Iterator for Pool {
-    type Item = Arc<String>;
+    type Item = Arc<Host>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.hosts.len() == 0 {
@@ -146,7 +185,7 @@ impl Iterator for Pool {
                 self.hosts.get(index).unwrap().clone()
             }
             LoadBalancingAlgorithm::LeastConnections => {
-                let mut least_connections_host: Option<Arc<String>> = None;
+                let mut least_connections_host: Option<Arc<Host>> = None;
                 let mut least_connection_count = usize::MAX;
                 for host in self.hosts.iter() {
                     // This reference count doesn't actually contain the number of active connections
