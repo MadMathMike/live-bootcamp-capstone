@@ -17,6 +17,18 @@ impl Host {
             response_times: Arc::new(RwLock::new(CircularBuffer::new())),
         }
     }
+
+    pub fn count_connections(host: &Arc<Host>) -> usize {
+        // This reference count doesn't actually contain the number of active connections
+        // to the host, but it correlates, which is good enough for the purposes of the
+        // "least connections" algorithm.
+        //
+        // How it works:
+        // As the host is cloned for each new request, the internal counter of the Arc
+        // will increment. And when the request completes, the arc clone is dropped,
+        // which decrements the strong count.
+        Arc::strong_count(host)
+    }
 }
 
 #[derive(Debug)]
@@ -70,24 +82,14 @@ impl Iterator for Pool {
                 let index = self.round_robin_counter % self.hosts.len();
                 self.hosts.get(index).unwrap().clone()
             }
-            LoadBalancingAlgorithm::LeastConnections => {
-                let mut least_connections_host: Option<Arc<Host>> = None;
-                let mut least_connection_count = usize::MAX;
-                for host in self.hosts.iter() {
-                    // This reference count doesn't actually contain the number of active connections
-                    // to the host, but it correlates. As the host is cloned for each new request,
-                    // the internal counter of the Arc will increment. And when the request completes,
-                    // the clone is dropped, which decrements.
-                    let connection_count = Arc::strong_count(host);
-
-                    if connection_count < least_connection_count {
-                        least_connection_count = connection_count;
-                        least_connections_host = Some(host.clone());
-                    }
-                }
-
-                least_connections_host.unwrap()
-            }
+            LoadBalancingAlgorithm::LeastConnections => self
+                .hosts
+                .iter()
+                .min_by(|host1, host2| {
+                    Host::count_connections(host1).cmp(&Host::count_connections(host2))
+                })
+                .unwrap()
+                .clone(),
         };
 
         Some(host)
