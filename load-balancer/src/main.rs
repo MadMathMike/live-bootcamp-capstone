@@ -3,6 +3,7 @@ mod load_balancing;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -11,6 +12,7 @@ use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
+use tokio::time::sleep;
 
 use crate::forwarding::forward;
 use crate::load_balancing::*;
@@ -22,6 +24,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "localhost:3001".to_owned(),
         "localhost:3003".to_owned(),
     ])));
+
+    tokio::task::spawn(monitor_pool(pool.clone()));
 
     let config_addr = SocketAddr::from(([127, 0, 0, 1], 2999));
     let config_listener = TcpListener::bind(config_addr).await?;
@@ -71,5 +75,28 @@ async fn listen_for_algorithm_change_requests(pool: Arc<RwLock<Pool>>, listener:
             println!("{} response time average {avg:?}", host.connection);
         }
         println!("{:?}", mut_pool.algorithm);
+    }
+}
+
+// TODO: This is also where I will put health checks to pull hosts out of the pool when needed
+async fn monitor_pool(pool: Arc<RwLock<Pool>>) {
+    // This is a low number to make testing easier
+    const CUTOFF: usize = 10;
+
+    loop {
+        let mut mut_pool = pool.write().await;
+        mut_pool.algorithm = if mut_pool
+            .hosts
+            .iter()
+            .any(|host| Host::count_connections(&host) > CUTOFF)
+        {
+            LoadBalancingAlgorithm::LeastConnections
+        } else {
+            LoadBalancingAlgorithm::RoundRobin
+        };
+
+        println!("{:?}", mut_pool.algorithm);
+
+        sleep(Duration::from_secs(10)).await;
     }
 }
