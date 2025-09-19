@@ -97,6 +97,8 @@ async fn monitor_pool(pool: Arc<RwLock<Pool>>) {
 
         println!("{:?}", mut_pool.algorithm);
 
+        drop(mut_pool);
+
         sleep(Duration::from_secs(10)).await;
     }
 }
