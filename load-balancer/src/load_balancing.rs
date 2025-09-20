@@ -81,12 +81,8 @@ impl Pool {
             LoadBalancingAlgorithm::RoundRobin
         };
     }
-}
 
-impl Iterator for Pool {
-    type Item = Arc<Host>;
-
-    fn next(&mut self) -> Option<Self::Item> {
+    pub fn next_host(&mut self) -> Option<Arc<Host>> {
         if self.hosts.len() == 0 {
             return None;
         }
