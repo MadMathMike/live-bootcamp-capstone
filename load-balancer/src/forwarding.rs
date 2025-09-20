@@ -1,7 +1,9 @@
-use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Instant;
 
+use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, Full};
+use hyper::body::Bytes;
 use hyper::{Request, Response};
 use hyper_util::client::legacy::Client;
 use hyper_util::client::legacy::connect::HttpConnector;
@@ -12,7 +14,7 @@ pub async fn forward(
     mut request: Request<hyper::body::Incoming>,
     target_host: Arc<Host>,
     client: Client<HttpConnector, hyper::body::Incoming>,
-) -> Result<Response<hyper::body::Incoming>, Infallible> {
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let uri_string = format!(
         "http://{}{}",
         target_host.connection,
@@ -43,14 +45,26 @@ pub async fn forward(
                 .write()
                 .await
                 .push_back(start.elapsed().as_millis());
-            Ok(res)
+
+            let (parts, body) = res.into_parts();
+
+            Ok(Response::from_parts(parts, body.boxed()))
         }
         Err(_err) => {
-            todo!()
-            // eprintln!("Request failed: {:?}", err);
-            // let mut res = Response::new(Full::new(Bytes::from("Internal Server Error")));
-            // *res.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
-            // Ok(res)
+            // TODO: log error
+
+            // TODO: Also consider tracking error against host.
+            // Not sure what types of errors in making the request
+            // should tell us that the host itself is bad.
+
+            let body = Full::new(Bytes::new()).map_err(|e| match e {}).boxed();
+
+            let res = Response::builder()
+                .status(hyper::StatusCode::SERVICE_UNAVAILABLE)
+                .body(body)
+                .unwrap();
+
+            Ok(res)
         }
     }
 }
