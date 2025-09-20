@@ -45,7 +45,7 @@ pub async fn forward(
                 .push_back(start.elapsed().as_millis());
             Ok(res)
         }
-        Err(err) => {
+        Err(_err) => {
             todo!()
             // eprintln!("Request failed: {:?}", err);
             // let mut res = Response::new(Full::new(Bytes::from("Internal Server Error")));

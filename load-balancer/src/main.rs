@@ -12,7 +12,7 @@ use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-use tokio::time::sleep;
+use tokio::time::interval;
 
 use crate::forwarding::forward;
 use crate::load_balancing::*;
@@ -83,7 +83,11 @@ async fn monitor_pool(pool: Arc<RwLock<Pool>>) {
     // This is a low number to make testing easier
     const CUTOFF: usize = 10;
 
+    let mut interval = interval(Duration::from_secs(10));
+
     loop {
+        interval.tick().await;
+
         let mut mut_pool = pool.write().await;
         mut_pool.algorithm = if mut_pool
             .hosts
@@ -96,9 +100,5 @@ async fn monitor_pool(pool: Arc<RwLock<Pool>>) {
         };
 
         println!("{:?}", mut_pool.algorithm);
-
-        drop(mut_pool);
-
-        sleep(Duration::from_secs(10)).await;
     }
 }
