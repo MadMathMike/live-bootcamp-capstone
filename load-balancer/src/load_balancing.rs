@@ -65,6 +65,22 @@ impl Pool {
             }
         }
     }
+
+    pub fn determine_algorithm(&mut self) {
+        // This is a low number to make testing easier
+        // TODO: make this configurable via Pool::new
+        const CUTOFF: usize = 10;
+
+        self.algorithm = if self
+            .hosts
+            .iter()
+            .any(|host| Host::count_connections(&host) > CUTOFF)
+        {
+            LoadBalancingAlgorithm::LeastConnections
+        } else {
+            LoadBalancingAlgorithm::RoundRobin
+        };
+    }
 }
 
 impl Iterator for Pool {

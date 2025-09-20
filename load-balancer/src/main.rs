@@ -63,8 +63,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn listen_for_algorithm_change_requests(pool: Arc<RwLock<Pool>>, listener: TcpListener) {
     loop {
         let (_, _) = listener.accept().await.unwrap();
+
         let mut mut_pool = pool.write().await;
         mut_pool.cycle_algorithm();
+
+        // Print host statistics
         for host in mut_pool.hosts.iter() {
             let response_times = host.response_times.read().await;
             let avg = if response_times.len() > 0 {
@@ -74,30 +77,21 @@ async fn listen_for_algorithm_change_requests(pool: Arc<RwLock<Pool>>, listener:
             };
             println!("{} response time average {avg:?}", host.connection);
         }
+
         println!("{:?}", mut_pool.algorithm);
     }
 }
 
-// TODO: This is also where I will put health checks to pull hosts out of the pool when needed
 async fn monitor_pool(pool: Arc<RwLock<Pool>>) {
-    // This is a low number to make testing easier
-    const CUTOFF: usize = 10;
-
     let mut interval = interval(Duration::from_secs(10));
 
     loop {
         interval.tick().await;
 
+        // TODO: Check host health via /ping endpoint and remove from pool if no response
+
         let mut mut_pool = pool.write().await;
-        mut_pool.algorithm = if mut_pool
-            .hosts
-            .iter()
-            .any(|host| Host::count_connections(&host) > CUTOFF)
-        {
-            LoadBalancingAlgorithm::LeastConnections
-        } else {
-            LoadBalancingAlgorithm::RoundRobin
-        };
+        mut_pool.determine_algorithm();
 
         println!("{:?}", mut_pool.algorithm);
     }
