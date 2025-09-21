@@ -66,9 +66,8 @@ async fn monitor_pool(pool: Arc<RwLock<Pool>>) {
 
         // TODO: Check host health via /ping endpoint and remove from pool if no response
 
-        let mut mut_pool = pool.write().await;
-        mut_pool.determine_algorithm();
+        let algorithm = pool.write().await.determine_algorithm();
 
-        println!("{:?}", mut_pool.algorithm);
+        println!("{:?}", algorithm);
     }
 }

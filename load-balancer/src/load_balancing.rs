@@ -31,7 +31,7 @@ impl Host {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum LoadBalancingAlgorithm {
     RoundRobin,
     LeastConnections,
@@ -39,8 +39,8 @@ pub enum LoadBalancingAlgorithm {
 
 pub struct Pool {
     round_robin_counter: usize,
-    pub hosts: Vec<Arc<Host>>,
-    pub algorithm: LoadBalancingAlgorithm,
+    hosts: Vec<Arc<Host>>,
+    algorithm: LoadBalancingAlgorithm,
 }
 
 impl Pool {
@@ -55,7 +55,7 @@ impl Pool {
         }
     }
 
-    pub fn determine_algorithm(&mut self) {
+    pub fn determine_algorithm(&mut self) -> LoadBalancingAlgorithm {
         // This is a low number to make testing easier
         // TODO: make this configurable via Pool::new
         const CUTOFF: usize = 10;
@@ -69,6 +69,8 @@ impl Pool {
         } else {
             LoadBalancingAlgorithm::RoundRobin
         };
+
+        self.algorithm
     }
 
     pub fn next_host(&mut self) -> Option<Arc<Host>> {
