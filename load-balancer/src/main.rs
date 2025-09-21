@@ -27,13 +27,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::task::spawn(monitor_pool(pool.clone()));
 
-    let config_addr = SocketAddr::from(([127, 0, 0, 1], 2999));
-    let config_listener = TcpListener::bind(config_addr).await?;
-    tokio::task::spawn(listen_for_algorithm_change_requests(
-        pool.clone(),
-        config_listener,
-    ));
-
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     let listener = TcpListener::bind(addr).await?;
 
@@ -62,28 +55,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             None => todo!("Return 503 Service Unavailable response"),
         }
-    }
-}
-
-async fn listen_for_algorithm_change_requests(pool: Arc<RwLock<Pool>>, listener: TcpListener) {
-    loop {
-        let (_, _) = listener.accept().await.unwrap();
-
-        let mut mut_pool = pool.write().await;
-        mut_pool.cycle_algorithm();
-
-        // Print host statistics
-        for host in mut_pool.hosts.iter() {
-            let response_times = host.response_times.read().await;
-            let avg = if response_times.len() > 0 {
-                Some(response_times.iter().sum::<u128>() / response_times.len() as u128)
-            } else {
-                None
-            };
-            println!("{} response time average {avg:?}", host.connection);
-        }
-
-        println!("{:?}", mut_pool.algorithm);
     }
 }
 

@@ -55,17 +55,6 @@ impl Pool {
         }
     }
 
-    pub fn cycle_algorithm(&mut self) {
-        match self.algorithm {
-            LoadBalancingAlgorithm::RoundRobin => {
-                self.algorithm = LoadBalancingAlgorithm::LeastConnections
-            }
-            LoadBalancingAlgorithm::LeastConnections => {
-                self.algorithm = LoadBalancingAlgorithm::RoundRobin
-            }
-        }
-    }
-
     pub fn determine_algorithm(&mut self) {
         // This is a low number to make testing easier
         // TODO: make this configurable via Pool::new
