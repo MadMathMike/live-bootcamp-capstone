@@ -17,7 +17,7 @@ pub async fn forward(
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let uri_string = format!(
         "http://{}{}",
-        target_host.connection,
+        target_host.address,
         request
             .uri()
             .path_and_query()

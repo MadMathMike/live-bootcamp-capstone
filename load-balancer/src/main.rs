@@ -20,11 +20,14 @@ use crate::load_balancing::*;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = Arc::new(RwLock::new(Pool::new(vec![
-        "localhost:3002".to_owned(),
-        "localhost:3001".to_owned(),
-        "localhost:3003".to_owned(),
+        SocketAddr::from(([127, 0, 0, 1], 3001)),
+        SocketAddr::from(([127, 0, 0, 1], 3002)),
+        SocketAddr::from(([127, 0, 0, 1], 3003)),
     ])));
 
+    // TODO: when health checks are implemented, update the monitor_pool
+    // function to ping all the potential hosts at least once so we don't
+    // start serving traffic to unresponsive hosts.
     tokio::task::spawn(monitor_pool(pool.clone()));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));

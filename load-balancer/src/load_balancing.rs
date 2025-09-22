@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::usize;
 
@@ -6,14 +7,14 @@ use tokio::sync::RwLock;
 
 #[derive(Clone)]
 pub struct Host {
-    pub connection: String,
+    pub address: SocketAddr,
     pub response_times: Arc<RwLock<CircularBuffer<100, u128>>>,
 }
 
 impl Host {
-    pub fn new(connection: String) -> Self {
+    pub fn new(address: SocketAddr) -> Self {
         Self {
-            connection: connection,
+            address,
             response_times: Arc::new(RwLock::new(CircularBuffer::new())),
         }
     }
@@ -44,12 +45,12 @@ pub struct Pool {
 }
 
 impl Pool {
-    pub fn new(hosts: Vec<String>) -> Self {
+    pub fn new(hosts: Vec<SocketAddr>) -> Self {
         Self {
             round_robin_counter: 0,
             hosts: hosts
                 .into_iter()
-                .map(|host| Arc::new(Host::new(host)))
+                .map(|address| Arc::new(Host::new(address)))
                 .collect(),
             algorithm: LoadBalancingAlgorithm::RoundRobin,
         }
@@ -80,7 +81,8 @@ impl Pool {
 
         let host = match self.algorithm {
             LoadBalancingAlgorithm::RoundRobin => {
-                // Round robin
+                // TODO: uh oh! Without eventually resetting the counter back to zero,
+                // I think we're in for a panic from int overflow error
                 self.round_robin_counter += 1;
                 let index = self.round_robin_counter % self.hosts.len();
                 self.hosts.get(index).unwrap().clone()
