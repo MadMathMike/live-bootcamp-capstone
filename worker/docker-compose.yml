@@ -8,6 +8,7 @@ services:
       WORKER_PORT: 3001
       RUST_LOG: info
       MAX_WORK_MILLISECONDS: 100
+      INCLUDE_PING: true
   worker-2:
     build:
       context: .
@@ -17,6 +18,7 @@ services:
       WORKER_PORT: 3002
       RUST_LOG: info
       MAX_WORK_MILLISECONDS: 1000
+      INCLUDE_PING: true
   worker-3:
     build:
       context: .
@@ -26,3 +28,4 @@ services:
       WORKER_PORT: 3003
       RUST_LOG: info
       MAX_WORK_MILLISECONDS: 2000
+      INCLUDE_PING: false

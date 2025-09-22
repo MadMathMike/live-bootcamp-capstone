@@ -28,15 +28,22 @@ async fn main() -> Result<()> {
     let max_work_milliseconds = env::var("MAX_WORK_MILLISECONDS")?.parse::<u64>()?;
     let range = Uniform::new(0, max_work_milliseconds).unwrap();
 
+    let include_ping = env::var("INCLUDE_PING")?.parse::<bool>()?;
+
     let state = AppState {
         work_duration_range: range,
     };
 
-    let app = Router::new()
-        .route("/work", get(work))
+    let mut app = Router::new().route("/work", get(work));
+
+    // By excluding the ping, we make the worker look "unhealthy" to the load balancer because
+    // the worker will return a 404 NOT FOUND response instead of the expected 200 OK response.
+    if include_ping {
         // effectively our health check endpoint
-        .route("/ping", get(|| async {}))
-        .with_state(state);
+        app = app.route("/ping", get(|| async {}));
+    }
+
+    let app = app.with_state(state);
 
     let port_number = env::var("WORKER_PORT")?.parse::<u16>()?;
 
