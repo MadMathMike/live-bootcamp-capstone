@@ -56,8 +56,8 @@ pub async fn forward(
 
             Ok(Response::from_parts(parts, body.boxed()))
         }
-        Err(_err) => {
-            // TODO: log error
+        Err(err) => {
+            eprintln!("Error forwarding request {:?}", err);
 
             // TODO: Also consider tracking error against host.
             // Not sure what types of errors in making the request
