@@ -41,7 +41,7 @@ pub enum LoadBalancingAlgorithm {
 
 #[derive(Default)]
 pub struct Pool {
-    round_robin_counter: usize,
+    next_host_index: usize,
     hosts: Vec<Arc<Host>>,
     algorithm: LoadBalancingAlgorithm,
 }
@@ -72,23 +72,15 @@ impl Pool {
 
         let host = match self.algorithm {
             LoadBalancingAlgorithm::RoundRobin => {
-                // TODO: uh oh! Without eventually resetting the counter back to zero,
-                // I think we're in for a panic from int overflow error
-                self.round_robin_counter += 1;
-                let index = self.round_robin_counter % self.hosts.len();
-                self.hosts.get(index).unwrap().clone()
+                self.next_host_index = (self.next_host_index + 1) % self.hosts.len();
+                self.hosts.get(self.next_host_index)
             }
-            LoadBalancingAlgorithm::LeastConnections => self
-                .hosts
-                .iter()
-                .min_by(|host1, host2| {
-                    Host::count_connections(host1).cmp(&Host::count_connections(host2))
-                })
-                .unwrap()
-                .clone(),
+            LoadBalancingAlgorithm::LeastConnections => self.hosts.iter().min_by(|host1, host2| {
+                Host::count_connections(host1).cmp(&Host::count_connections(host2))
+            }),
         };
 
-        Some(host)
+        Some(host.unwrap().clone())
     }
 
     pub fn add_hosts(&mut self, addresses: Vec<&SocketAddr>) {
