@@ -42,25 +42,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let (stream, _) = listener.accept().await?;
         let io = TokioIo::new(stream);
+        let host = pool.write().await.next_host();
+        let client = client.clone();
 
-        match pool.write().await.next_host() {
-            Some(host) => {
-                let client = client.clone();
-
-                tokio::task::spawn(async move {
-                    if let Err(err) = http1::Builder::new()
-                        .serve_connection(
-                            io,
-                            service_fn(move |req| forward(req, host.clone(), client.clone())),
-                        )
-                        .await
-                    {
-                        eprintln!("Error serving connection: {:?}", err);
-                    }
-                });
+        tokio::task::spawn(async {
+            if let Err(err) = http1::Builder::new()
+                .serve_connection(
+                    io,
+                    service_fn(move |req| forward(req, host.clone(), client.clone())),
+                )
+                .await
+            {
+                eprintln!("Error serving connection: {:?}", err);
             }
-            None => todo!("Return 503 Service Unavailable response"),
-        }
+        });
     }
 }
 

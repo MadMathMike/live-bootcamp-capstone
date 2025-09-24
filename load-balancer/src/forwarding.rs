@@ -12,9 +12,15 @@ use crate::load_balancing::*;
 
 pub async fn forward(
     mut request: Request<hyper::body::Incoming>,
-    target_host: Arc<Host>,
+    target_host: Option<Arc<Host>>,
     client: Client<HttpConnector, hyper::body::Incoming>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    if target_host.is_none() {
+        return Ok(service_unavailable_response());
+    }
+
+    let target_host = target_host.unwrap();
+
     let uri_string = format!(
         "http://{}{}",
         target_host.address,
@@ -55,16 +61,20 @@ pub async fn forward(
 
             // TODO: Also consider tracking error against host.
             // Not sure what types of errors in making the request
-            // should tell us that the host itself is bad.
+            // should tell us that the host itself is bad though.
 
-            let body = Full::new(Bytes::new()).map_err(|e| match e {}).boxed();
-
-            let res = Response::builder()
-                .status(hyper::StatusCode::SERVICE_UNAVAILABLE)
-                .body(body)
-                .unwrap();
-
-            Ok(res)
+            Ok(service_unavailable_response())
         }
     }
+}
+
+fn service_unavailable_response() -> Response<BoxBody<Bytes, hyper::Error>> {
+    let body = Full::new(Bytes::new()).map_err(|e| match e {}).boxed();
+
+    let res = Response::builder()
+        .status(hyper::StatusCode::SERVICE_UNAVAILABLE)
+        .body(body)
+        .unwrap();
+
+    res
 }
