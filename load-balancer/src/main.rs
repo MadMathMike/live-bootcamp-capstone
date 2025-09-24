@@ -24,15 +24,19 @@ use crate::load_balancing::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addresses = vec![
-        SocketAddr::from(([127, 0, 0, 1], 3001)),
-        SocketAddr::from(([127, 0, 0, 1], 3002)),
-        SocketAddr::from(([127, 0, 0, 1], 3003)),
-    ];
-
     let pool = Arc::new(RwLock::new(Pool::default()));
 
-    tokio::task::spawn(monitor_pool(addresses, pool.clone()));
+    let monitor_config = MonitorConfig {
+        tick_interval_seconds: 10,
+        ping_timeout_millis: 50,
+        host_addresses: vec![
+            SocketAddr::from(([127, 0, 0, 1], 3001)),
+            SocketAddr::from(([127, 0, 0, 1], 3002)),
+            SocketAddr::from(([127, 0, 0, 1], 3003)),
+        ],
+    };
+
+    tokio::task::spawn(monitor_pool(monitor_config, pool.clone()));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     let listener = TcpListener::bind(addr).await?;
@@ -60,9 +64,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-async fn monitor_pool(addresses: Vec<SocketAddr>, pool: Arc<RwLock<Pool>>) {
-    // TODO: make this interval configurable
-    let mut interval = interval(Duration::from_secs(10));
+struct MonitorConfig {
+    pub tick_interval_seconds: u16,
+    pub ping_timeout_millis: u16,
+    pub host_addresses: Vec<SocketAddr>,
+}
+
+async fn monitor_pool(config: MonitorConfig, pool: Arc<RwLock<Pool>>) {
+    let mut interval = interval(Duration::from_secs(config.tick_interval_seconds as u64));
     let client: Client<HttpConnector, Full<Bytes>> =
         client::legacy::Builder::new(TokioExecutor::new()).build_http();
 
@@ -71,13 +80,16 @@ async fn monitor_pool(addresses: Vec<SocketAddr>, pool: Arc<RwLock<Pool>>) {
 
         let mut join_set = JoinSet::new();
 
-        for address in addresses.iter().cloned() {
+        for address in config.host_addresses.iter().cloned() {
             let uri = Uri::try_from(format!("http://{address}/ping")).unwrap();
             let client = client.clone();
 
             join_set.spawn(async move {
-                // TODO: make this timeout configurable
-                let ping_response = timeout(Duration::from_millis(50), client.get(uri)).await;
+                let ping_response = timeout(
+                    Duration::from_millis(config.ping_timeout_millis as u64),
+                    client.get(uri),
+                )
+                .await;
                 match ping_response {
                     Ok(Ok(response)) if response.status() == StatusCode::OK => Ok(address),
                     _ => {

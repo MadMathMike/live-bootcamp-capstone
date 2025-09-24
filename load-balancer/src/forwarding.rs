@@ -39,7 +39,7 @@ pub async fn forward(
         builder = builder.header(key, value);
     }
 
-    let request_forwarded = builder.body(request.into_body()).unwrap(); // TODO
+    let request_forwarded = builder.body(request.into_body()).unwrap();
 
     let start = Instant::now();
 
