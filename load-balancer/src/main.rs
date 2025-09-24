@@ -23,13 +23,15 @@ use crate::load_balancing::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let pool = Arc::new(RwLock::new(Pool::new(vec![
+    let addresses = vec![
         SocketAddr::from(([127, 0, 0, 1], 3001)),
         SocketAddr::from(([127, 0, 0, 1], 3002)),
         SocketAddr::from(([127, 0, 0, 1], 3003)),
-    ])));
+    ];
 
-    tokio::task::spawn(monitor_pool(pool.clone()));
+    let pool = Arc::new(RwLock::new(Pool::default()));
+
+    tokio::task::spawn(monitor_pool(addresses, pool.clone()));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     let listener = TcpListener::bind(addr).await?;
@@ -62,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-async fn monitor_pool(pool: Arc<RwLock<Pool>>) {
+async fn monitor_pool(addresses: Vec<SocketAddr>, pool: Arc<RwLock<Pool>>) {
     // TODO: make this interval configurable
     let mut interval = interval(Duration::from_secs(10));
     let client: Client<HttpConnector, Full<Bytes>> =
@@ -71,30 +73,30 @@ async fn monitor_pool(pool: Arc<RwLock<Pool>>) {
     loop {
         interval.tick().await;
 
-        let mut responsive_hosts = vec![];
-
-        // To allow proxy requests to continue while we ping the hosts, we get
-        // the host addresses from the pool on separate line to ensure the lock
-        // acquired as an intermediary value is dropped quickly.
-        let host_addresses = pool.read().await.into_iter();
+        let mut good_hosts = vec![];
+        let mut bad_hosts = vec![];
 
         // TODO: Ping all the hosts concurrently instead of serially
-        for address in host_addresses {
+        for address in addresses.iter() {
             let uri = Uri::try_from(format!("http://{address}/ping")).unwrap();
 
             // TODO: make this timeout configurable
             let ping_response = timeout(Duration::from_millis(50), client.get(uri)).await;
             match ping_response {
-                Ok(Ok(response)) if response.status() == StatusCode::OK => {
-                    responsive_hosts.push(address)
-                }
-                _ => println!("Failed to ping {}", address),
+                Ok(Ok(response)) if response.status() == StatusCode::OK => good_hosts.push(address),
+                _ => bad_hosts.push(address),
             };
         }
 
-        pool.write().await.set_good_hosts(&responsive_hosts);
+        for bad_host in bad_hosts.iter() {
+            println!("Ping failed on {bad_host}");
+        }
 
-        let algorithm = pool.write().await.determine_algorithm();
+        let mut mut_pool = pool.write().await;
+        mut_pool.add_hosts(good_hosts);
+        mut_pool.remove_hosts(bad_hosts);
+
+        let algorithm = mut_pool.determine_algorithm();
 
         println!("{:?}", algorithm);
     }
