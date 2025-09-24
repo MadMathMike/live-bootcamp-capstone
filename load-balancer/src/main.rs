@@ -16,6 +16,7 @@ use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
+use tokio::task::JoinSet;
 use tokio::time::{interval, timeout};
 
 use crate::forwarding::forward;
@@ -68,24 +69,31 @@ async fn monitor_pool(addresses: Vec<SocketAddr>, pool: Arc<RwLock<Pool>>) {
     loop {
         interval.tick().await;
 
-        let mut good_hosts = vec![];
-        let mut bad_hosts = vec![];
+        let mut join_set = JoinSet::new();
 
-        // TODO: Ping all the hosts concurrently instead of serially
-        for address in addresses.iter() {
+        for address in addresses.iter().cloned() {
             let uri = Uri::try_from(format!("http://{address}/ping")).unwrap();
+            let client = client.clone();
 
-            // TODO: make this timeout configurable
-            let ping_response = timeout(Duration::from_millis(50), client.get(uri)).await;
-            match ping_response {
-                Ok(Ok(response)) if response.status() == StatusCode::OK => good_hosts.push(address),
-                _ => bad_hosts.push(address),
-            };
+            join_set.spawn(async move {
+                // TODO: make this timeout configurable
+                let ping_response = timeout(Duration::from_millis(50), client.get(uri)).await;
+                match ping_response {
+                    Ok(Ok(response)) if response.status() == StatusCode::OK => Ok(address),
+                    _ => {
+                        println!("Ping failed on {address}");
+                        Err(address)
+                    }
+                }
+            });
         }
 
-        for bad_host in bad_hosts.iter() {
-            println!("Ping failed on {bad_host}");
-        }
+        let ping_results = join_set.join_all().await;
+
+        let (good_hosts, bad_hosts): (Vec<_>, Vec<_>) =
+            ping_results.into_iter().partition(|result| result.is_ok());
+        let good_hosts = good_hosts.into_iter().flatten().collect();
+        let bad_hosts = bad_hosts.into_iter().flatten().collect();
 
         let mut mut_pool = pool.write().await;
         mut_pool.add_hosts(good_hosts);

@@ -83,15 +83,15 @@ impl Pool {
         Some(host.unwrap().clone())
     }
 
-    pub fn add_hosts(&mut self, addresses: Vec<&SocketAddr>) {
+    pub fn add_hosts(&mut self, addresses: Vec<SocketAddr>) {
         for addr in addresses {
-            if !self.hosts.iter().any(|h| h.address == *addr) {
-                self.hosts.push(Arc::new(Host::new((*addr).clone())));
+            if !self.hosts.iter().any(|h| h.address == addr) {
+                self.hosts.push(Arc::new(Host::new(addr)));
             }
         }
     }
 
-    pub fn remove_hosts(&mut self, addresses: Vec<&SocketAddr>) {
-        self.hosts.retain(|h| !addresses.contains(&&h.address));
+    pub fn remove_hosts(&mut self, addresses: Vec<SocketAddr>) {
+        self.hosts.retain(|h| !addresses.contains(&h.address));
     }
 }
