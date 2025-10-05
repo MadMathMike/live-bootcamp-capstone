@@ -8,7 +8,7 @@ use hyper::{Request, Response};
 use hyper_util::client::legacy::Client;
 use hyper_util::client::legacy::connect::HttpConnector;
 
-use crate::load_balancing::*;
+use crate::host::Host;
 
 pub async fn forward(
     mut request: Request<hyper::body::Incoming>,

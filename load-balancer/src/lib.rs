@@ -1,6 +1,11 @@
 mod forwarding;
-mod load_balancing;
+mod host;
 mod monitoring;
+mod pool;
+
+use crate::forwarding::forward;
+use crate::monitoring::*;
+use crate::pool::*;
 
 use std::net::SocketAddr;
 use std::ops::RangeInclusive;
@@ -12,10 +17,6 @@ use hyper_util::client;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-
-use crate::forwarding::forward;
-use crate::load_balancing::*;
-use crate::monitoring::*;
 
 pub struct LoadBalancerConfig {
     pub monitor_interval_secs: u16,

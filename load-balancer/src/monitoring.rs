@@ -13,7 +13,7 @@ use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 use tokio::time::{interval, timeout};
 
-use crate::load_balancing::*;
+use crate::pool::*;
 
 pub struct MonitorConfig {
     pub tick_interval_seconds: u16,

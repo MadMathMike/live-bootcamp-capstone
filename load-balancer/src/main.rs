@@ -8,7 +8,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // This is a low number to make manual testing easier
         concurrent_connections_cutover: 10,
         listen_on_port: 3000,
-        host_port_range: 3001..=3002,
+        host_port_range: 3001..=3003,
     };
 
     run_load_balancer(config).await

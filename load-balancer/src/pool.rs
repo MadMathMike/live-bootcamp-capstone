@@ -1,36 +1,8 @@
+use crate::host::Host;
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::usize;
-
-use circular_buffer::CircularBuffer;
-use tokio::sync::RwLock;
-
-#[derive(Clone)]
-pub struct Host {
-    pub address: SocketAddr,
-    pub response_times: Arc<RwLock<CircularBuffer<100, u128>>>,
-}
-
-impl Host {
-    pub fn new(address: SocketAddr) -> Self {
-        Self {
-            address,
-            response_times: Arc::new(RwLock::new(CircularBuffer::new())),
-        }
-    }
-
-    pub fn count_connections(host: &Arc<Host>) -> usize {
-        // This reference count doesn't actually contain the number of active connections
-        // to the host, but it correlates, which is good enough for the purposes of the
-        // "least connections" algorithm.
-        //
-        // How it works:
-        // As the host is cloned for each new request, the internal counter of the Arc
-        // will increment. And when the request completes, the arc clone is dropped,
-        // which decrements the strong count.
-        Arc::strong_count(host)
-    }
-}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum LoadBalancingAlgorithm {
@@ -58,7 +30,7 @@ impl Pool {
         self.algorithm = if self
             .hosts
             .iter()
-            .any(|host| Host::count_connections(&host) > self.concurrent_connections_cutover)
+            .any(|host| count_host_connections(&host) > self.concurrent_connections_cutover)
         {
             LoadBalancingAlgorithm::LeastConnections
         } else {
@@ -79,7 +51,7 @@ impl Pool {
                 self.hosts.get(self.next_host_index)
             }
             LoadBalancingAlgorithm::LeastConnections => self.hosts.iter().min_by(|host1, host2| {
-                Host::count_connections(host1).cmp(&Host::count_connections(host2))
+                count_host_connections(host1).cmp(&count_host_connections(host2))
             }),
         };
 
@@ -99,6 +71,18 @@ impl Pool {
     }
 }
 
+fn count_host_connections(host: &Arc<Host>) -> usize {
+    // This reference count doesn't actually contain the number of active connections
+    // to the host, but it correlates, which is good enough for the purposes of the
+    // "least connections" algorithm.
+    //
+    // How it works:
+    // As the host is cloned for each new request, the internal counter of the Arc
+    // will increment. And when the request completes, the arc clone is dropped,
+    // which decrements the strong count.
+    Arc::strong_count(host)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,24 +90,6 @@ mod tests {
 
     fn make_localhost_addr(port: u16) -> SocketAddr {
         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port))
-    }
-
-    #[test]
-    fn test_host_count_connections() {
-        let addr = make_localhost_addr(8080);
-        let host = Arc::new(Host::new(addr));
-
-        // Initially, strong count should be 1 (the original arc)
-        assert_eq!(Host::count_connections(&host), 1);
-
-        // Clone the host
-        let host2 = host.clone();
-        assert_eq!(Host::count_connections(&host), 2);
-        assert_eq!(Host::count_connections(&host2), 2);
-
-        // Drop one clone
-        drop(host2);
-        assert_eq!(Host::count_connections(&host), 1);
     }
 
     #[test]
