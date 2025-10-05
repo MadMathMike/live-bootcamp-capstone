@@ -18,7 +18,9 @@ use crate::monitoring::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let pool = Arc::new(RwLock::new(Pool::default()));
+    // This is a low number to make testing easier
+    let concurrent_connections_cutover = 10;
+    let pool = Arc::new(RwLock::new(Pool::new(concurrent_connections_cutover)));
 
     let monitor_config = MonitorConfig {
         tick_interval_seconds: 10,
@@ -57,3 +59,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 }
+
+// TODO: add some integration tests

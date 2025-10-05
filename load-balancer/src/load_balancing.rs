@@ -41,21 +41,24 @@ pub enum LoadBalancingAlgorithm {
 
 #[derive(Default)]
 pub struct Pool {
+    concurrent_connections_cutover: usize,
     next_host_index: usize,
     hosts: Vec<Arc<Host>>,
     algorithm: LoadBalancingAlgorithm,
 }
 
 impl Pool {
-    pub fn determine_algorithm(&mut self) -> LoadBalancingAlgorithm {
-        // This is a low number to make testing easier
-        // TODO: make this configurable via Pool::new
-        const CUTOFF: usize = 10;
+    pub fn new(concurrent_connections_cutover: usize) -> Self {
+        let mut pool = Self::default();
+        pool.concurrent_connections_cutover = concurrent_connections_cutover;
+        pool
+    }
 
+    pub fn determine_algorithm(&mut self) -> LoadBalancingAlgorithm {
         self.algorithm = if self
             .hosts
             .iter()
-            .any(|host| Host::count_connections(&host) > CUTOFF)
+            .any(|host| Host::count_connections(&host) > self.concurrent_connections_cutover)
         {
             LoadBalancingAlgorithm::LeastConnections
         } else {
@@ -95,3 +98,5 @@ impl Pool {
         self.hosts.retain(|h| !addresses.contains(&h.address));
     }
 }
+
+// TODO: Add some unit tests
