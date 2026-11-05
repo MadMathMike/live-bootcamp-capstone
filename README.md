@@ -19,6 +19,9 @@ client ──▶ load balancer :3000 ──────────┼─▶ wor
 - **Test workers:** the `worker` crate simulates work by sleeping for a random time, with a
   different upper limit per worker, so slow hosts are easy to reproduce.
 
+**DEMO**
+<img width="1154" height="503" alt="Load Balancer Demo" src="https://github.com/user-attachments/assets/a5d77525-f17c-4b7c-9501-88806e7bd973" />
+
 See [Known limitations](#known-limitations) for the current gaps.
 
 ### Advanced Rust techniques
