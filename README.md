@@ -12,7 +12,7 @@ client ──▶ load balancer :3000 ──────────┼─▶ wor
                  └─ on fixed interval: GET /ping on each worker, then re-pick the algorithm
 ```
 
-- **Load balancing:** uses round-robin by default, and least-connections when any host exceeds a connection count threshold.
+- **Load balancing:** uses round-robin by default, and least-connections when any host exceeds a connection count cutover.
 - **Health checks:** pings each worker's `/ping` endpoint concurrently with a short timeout.
 - **Adaptive switching:** after each health check, a decision step picks the algorithm by
   comparing each host's connection count to a configurable cutover.
@@ -28,10 +28,6 @@ See [Known limitations](#known-limitations) for the current gaps.
   the host's `Arc`, so the reference count rises and falls naturally with traffic. Because the decrement
   happens in `Drop`, it can't be skipped by an early return or a dropped client
   ([`pool.rs`](load-balancer/src/pool.rs)).
-- **Proving an error can't happen.** `Full<Bytes>` has the error type `Infallible`, so
-  `.map_err(|e| match e {})` converts it to `hyper::Error` with an empty `match`. The compiler
-  accepts this because the type has no values, so no `unwrap` or panic path is needed
-  ([`forwarding.rs`](load-balancer/src/forwarding.rs)).
 - **Type erasure for response bodies.** The proxy returns either a streaming upstream body or an
   empty generated one. Boxing both as `BoxBody<Bytes, hyper::Error>` gives `forward` a single
   return type.
@@ -39,18 +35,14 @@ See [Known limitations](#known-limitations) for the current gaps.
   streams rather than being collected into memory. `Client<HttpConnector, Incoming>` carries the
   inbound body type straight through to the upstream request.
 - **Structured concurrency with precise matching.** Each health check round spawns its pings
-  into a `JoinSet`, wraps each in `tokio::time::timeout`, and waits with `join_all`. The nested
-  pattern `Ok(Ok(response)) if response.status() == StatusCode::OK` covers timeout, transport
-  failure, and bad status in a single arm
+  into a `JoinSet`, wraps each in `tokio::time::timeout`, and waits with `join_all`. Any timeout, transport failure, or bad status falls through to a single _ arm.
   ([`monitoring.rs`](load-balancer/src/monitoring.rs)).
-- **Disjoint capture in `async move`.** The ping tasks must be `'static`, yet they use
-  `config.ping_timeout_millis` while `config.host_addresses` is being iterated. This compiles
-  because Rust 2021 and later capture only the field used, not all of `config`.
 - **Const generics for bounded metrics.** `CircularBuffer<100, u128>` puts the capacity in the
   type, so per-host response time history has a fixed size and never reallocates
   ([`host.rs`](load-balancer/src/host.rs)).
-- **Library and binary split.** Both crates keep their logic in `lib.rs` behind a thin `main.rs`.
-  This lets the integration test run a real worker and load balancer in one process, through a
+- **Library and binary split.** Both crates keep their logic in a library create behind a thin
+  `main.rs`.
+  This lets the integration tests run real workers and a load balancer in one process, through a
   `path` dev-dependency.
 
 ## Project layout
@@ -58,11 +50,12 @@ See [Known limitations](#known-limitations) for the current gaps.
 | Path | Purpose |
 | --- | --- |
 | `load-balancer/src/lib.rs` | Accept loop and startup |
-| `load-balancer/src/main.rs` | Runtime configuration |
+| `load-balancer/src/host.rs` | Host address and response time history |
+| `load-balancer/src/main.rs` | Entry point (with compile time config) |
 | `load-balancer/src/pool.rs` | Host pool, algorithm selection, and unit tests |
 | `load-balancer/src/monitoring.rs` | Periodic health checks |
 | `load-balancer/src/forwarding.rs` | Request proxying and response time recording |
-| `load-balancer/tests/` | Integration test |
+| `load-balancer/tests/` | Integration tests |
 | `worker/` | Simulated backend, Dockerfile, and Compose file |
 | `generate-load.sh` | Fixed-rate traffic generator |
 
@@ -111,7 +104,7 @@ cd load-balancer
 cargo test
 ```
 
-The integration test binds ports 3000 and 3001, so stop any running stack first.
+The integration test bind to various 3xxx ports, so stop any running stack first.
 
 ## Load testing with `generate-load.sh`
 
@@ -179,25 +172,18 @@ the cutover by the next check.
 docker compose stop worker-3
 ```
 
-The balancer logs `Ping failed on 127.0.0.1:3003`, and about a third of requests return `503`.
-They recover after `docker compose start worker-3`. See
-[Known limitations](#known-limitations) for why these requests aren't rerouted.
+Requests that hit that host will fail, but should begin to succeed after the health checks 
+identify the bad host and removes it from the pool.
 
 ## Known limitations
-
-- **Failed hosts stay in the pool.** A failed ping is logged, but the host is never removed, so
-  it keeps receiving its share of requests. With one of three workers stopped, 50 of 147
-  requests returned `503`. In `monitoring.rs`, `bad_hosts` is built with `.flatten()` on `Err`
-  values, which yields nothing, so `remove_hosts` always gets an empty list.
 - **Algorithm decisions are periodic.** The balancer only re-picks the algorithm during a health
-  check, so it can take up to 10 seconds to react, and short bursts between checks go unseen.
-- **The cutover is not an exact connection count.** The compared value is an `Arc` reference
-  count: 1 for the pool, 1 per open connection, and 1 per in-flight request. A busy connection
-  counts twice, so the default cutover of 10 is reached at about 5 in-flight requests.
+  check, so it can take up to 10 seconds (currently) to react, and short bursts between checks 
+  go unseen.
 - **Hosts are chosen per connection.** All requests on a keep-alive connection go to the same
   worker. `generate-load.sh` starts a new `curl` for each request, so it isn't affected, but
   clients that reuse connections will be.
 - **Response times aren't used yet.** The last 100 response times per host are recorded, but
-  decisions are based only on connection counts.
-- **Configuration is compile-time only.** Changing a setting means editing `main.rs` and
-  rebuilding, and workers must be on `127.0.0.1`.
+  decisions are based only on connection counts. They are meant for a not-yet-implemented load 
+  balancing algorithms.
+- **Load balancer configuration is compile-time only.** Changing a setting means editing `main.rs`
+  and rebuilding, and workers must be on `127.0.0.1`.

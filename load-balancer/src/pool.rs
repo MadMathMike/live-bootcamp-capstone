@@ -79,7 +79,9 @@ fn count_host_connections(host: &Arc<Host>) -> usize {
     // How it works:
     // As the host is cloned for each new request, the internal counter of the Arc
     // will increment. And when the request completes, the arc clone is dropped,
-    // which decrements the strong count.
+    // which decrements the strong count. The count is not accurate to the active
+    // connections because other clones of the Arc<Host> exist (e.g., in the pool
+    // and each keep-alive connection).
     Arc::strong_count(host)
 }
 
