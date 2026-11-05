@@ -28,4 +28,4 @@ services:
       WORKER_PORT: 3003
       RUST_LOG: info
       MAX_WORK_MILLISECONDS: 2000
-      INCLUDE_PING: false
+      INCLUDE_PING: true
