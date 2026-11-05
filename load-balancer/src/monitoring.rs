@@ -56,7 +56,7 @@ pub async fn monitor_pool(config: MonitorConfig, pool: Arc<RwLock<Pool>>) {
         let (good_hosts, bad_hosts): (Vec<_>, Vec<_>) =
             ping_results.into_iter().partition(|result| result.is_ok());
         let good_hosts = good_hosts.into_iter().flatten().collect();
-        let bad_hosts = bad_hosts.into_iter().flatten().collect();
+        let bad_hosts = bad_hosts.into_iter().filter_map(Result::err).collect();
 
         let mut mut_pool = pool.write().await;
         mut_pool.add_hosts(good_hosts);
